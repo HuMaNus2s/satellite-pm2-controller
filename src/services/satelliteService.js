@@ -21,15 +21,17 @@ async function persistQueue() {
 }
 
 async function loadQueue() {
+  state.taskQueue = [];
   try {
     const raw = await redisService.get(QUEUE_KEY);
     if (raw) {
-      const loaded = JSON.parse(raw);
-      state.taskQueue = loaded.filter(t => t.status === 'pending' || t.status === 'processing');
-      console.log(`Queue restored: ${state.taskQueue.length} pending tasks`);
+      state.taskQueue = JSON.parse(raw);
+      console.log(`Queue restored: ${state.taskQueue.length} tasks (${state.taskQueue.filter(t => t.status === 'done').length} done)`);
     }
+    await persistQueue();
   } catch (err) {
     console.error('Queue load error:', err.message);
+    await persistQueue();
   }
 }
 
@@ -64,6 +66,7 @@ async function processQueueLoop() {
     state.photos.push(newPhoto);
     task.status = 'done';
     console.log(`Photo ${newPhoto.id} ready.`);
+    await persistQueue();
   }
 
   isProcessing = false;

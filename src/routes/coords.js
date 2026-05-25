@@ -39,9 +39,14 @@ router.post('/update', async (req, res) => {
     }
     await redisService.updateCoords(x, y, z);
 
-    const task = { id: uuidv4(), type: 'correction', status: 'pending', createdAt: new Date().toISOString(), axis: 'manual' };
+    const task = { id: uuidv4(), type: 'correction', status: 'processing', createdAt: new Date().toISOString(), axis: 'manual' };
     satelliteService.getQueue().push(task);
     satelliteService.persistQueue();
+
+    setTimeout(() => {
+      task.status = 'done';
+      satelliteService.persistQueue();
+    }, 2000);
 
     res.json({ success: true, coords: { x, y, z }, taskId: task.id });
   } catch (err) {
