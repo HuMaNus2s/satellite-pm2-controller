@@ -24,8 +24,9 @@ async function loadQueue() {
   try {
     const raw = await redisService.get(QUEUE_KEY);
     if (raw) {
-      state.taskQueue = JSON.parse(raw);
-      console.log(`Queue restored: ${state.taskQueue.length} tasks`);
+      const loaded = JSON.parse(raw);
+      state.taskQueue = loaded.filter(t => t.status === 'pending' || t.status === 'processing');
+      console.log(`Queue restored: ${state.taskQueue.length} pending tasks`);
     }
   } catch (err) {
     console.error('Queue load error:', err.message);

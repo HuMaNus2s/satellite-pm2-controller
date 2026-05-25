@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Satellite Control Center</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    .panel { scroll-behavior: smooth; }
+    @media (max-width: 640px) {
+      .axis-btn { width: 2.5rem !important; height: 2.5rem !important; font-size: 1.25rem !important; }
+    }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-safe font-sans antialiased">
+  <div id="app">
+    <!-- Header -->
+    <header class="bg-gray-900 border-b border-gray-800 px-3 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-30">
+      <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+        <span class="text-xl sm:text-2xl shrink-0">🛰️</span>
+        <h1 class="text-sm sm:text-lg font-bold truncate">Satellite Control</h1>
+      </div>
+      <div class="flex items-center gap-2 sm:gap-4 shrink-0">
+        <div class="flex items-center gap-1.5">
+          <span class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full" :class="commsLedClass"></span>
+          <span class="text-xs sm:text-sm" :class="commsTextClass">{{ commsText }}</span>
+        </div>
+        <span class="text-xs sm:text-sm text-gray-500 font-mono tabular-nums">{{ clock }}</span>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="flex border-b border-gray-800 bg-gray-900 px-2 sm:px-4 overflow-x-auto sticky top-[52px] z-20">
+      <button v-for="t in tabs" :key="t.id"
+        @click="activeTab=t.id"
+        class="tab-btn whitespace-nowrap px-3 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-medium transition-colors"
+        :class="activeTab===t.id ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-500 hover:text-gray-300 border-b-2 border-transparent'">
+        {{ t.label }}
+      </button>
+    </div>
+
+    <!-- ============ DASHBOARD ============ -->
+    <div v-show="activeTab==='dashboard'" class="p-3 sm:p-6 space-y-4 sm:space-y-5 max-w-7xl mx-auto">
+
+      <!-- Row: sat visual + coords -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5">
+
+        <!-- Satellite canvas -->
+        <div class="lg:col-span-2 bg-gray-900 rounded-2xl border border-gray-800 p-3 sm:p-4 relative overflow-hidden" style="min-height:280px">
+          <div class="text-xs text-gray-500 uppercase tracking-wider mb-1 sm:mb-2">Orbit View</div>
+          <canvas ref="satCanvas" width="700" height="280" class="w-full rounded-lg" style="height:auto;aspect-ratio:700/280"></canvas>
+          <div class="flex justify-between text-xs text-gray-500 mt-2">
+            <span>Target: <span class="text-gray-300 font-mono">{{ targetStr }}</span></span>
+            <span :class="deviationClass">{{ deviationText }}</span>
+          </div>
+        </div>
+
+        <!-- Coords + axis btns -->
+        <div ref="coordsSection" class="rounded-2xl border p-4 sm:p-5 transition-colors duration-500" :class="coordsSectionClass">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400">Position</h2>
+            <span v-if="isCritical" class="text-red-400 text-xs font-medium">⚠️ Correction!</span>
+          </div>
+          <div class="space-y-3">
+            <div v-for="ax in ['x','y','z']" :key="ax" class="grid grid-cols-[auto_1fr_auto] items-center gap-1.5 sm:gap-2">
+              <span class="text-xs text-gray-500 w-4 shrink-0 text-center font-mono uppercase">{{ ax }}</span>
+              <button @click="adjustAxis(ax,-1)" class="axis-btn w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gray-800 hover:bg-gray-700 flex items-center justify-center text-lg font-bold text-gray-400 transition-colors active:scale-90">−</button>
+              <div class="bg-gray-800 rounded-xl px-3 py-2 text-center">
+                <span class="text-base sm:text-xl font-mono font-bold tabular-nums">{{ fmtNum(coords[ax]) }}</span>
+              </div>
+              <button @click="adjustAxis(ax,1)" class="axis-btn w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gray-800 hover:bg-gray-700 flex items-center justify-center text-lg font-bold text-gray-400 transition-colors active:scale-90">+</button>
+              <span class="text-xs font-mono text-right" :class="deltaClass(ax)">{{ deltaStr(ax) }}</span>
+            </div>
+          </div>
+          <div class="mt-3 text-xs text-gray-600 text-center">Threshold: {{ threshold }}</div>
+        </div>
+      </div>
+
+      <!-- Task Queue -->
+      <section class="bg-gray-900 rounded-2xl border border-gray-800 p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-3 sm:mb-4">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400">Task Queue</h2>
+          <span class="text-xs text-gray-600 bg-gray-800 px-2 py-1 rounded-full">{{ queue.length }}</span>
+        </div>
+        <div v-if="queue.length===0" class="text-sm text-gray-600 text-center py-6">No tasks. Use +/− buttons or add a photo task.</div>
+        <div v-else class="space-y-2">
+          <div v-for="t in queue" :key="t.id"
+            class="border rounded-xl px-3 sm:px-4 py-3 flex items-center justify-between gap-2"
+            :class="taskCardClass(t)">
+            <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+              <span class="text-base sm:text-lg shrink-0">{{ t.type==='correction' ? '🔄' : '📸' }}</span>
+              <div class="min-w-0">
+                <div class="text-sm font-medium truncate">{{ t.type==='correction' ? 'Axis correction' : 'Photo capture' }}</div>
+                <div class="text-xs text-gray-500 font-mono">{{ t.id.slice(0,8) }} · {{ timeSince(t.createdAt) }}</div>
+              </div>
+            </div>
+            <span class="shrink-0 text-xs font-medium" :class="taskStatusClass(t)">{{ taskStatusIcon(t) }} {{ t.status }}</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Processes -->
+      <section class="bg-gray-900 rounded-2xl border border-gray-800 p-4 sm:p-5">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3 sm:mb-4">Processes</h2>
+        <div v-if="processes.length===0" class="text-sm text-gray-600 text-center py-4">Loading...</div>
+        <div v-else class="space-y-2">
+          <div v-for="p in processes" :key="p.id" class="flex items-center justify-between bg-gray-800/40 rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 gap-2">
+            <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+              <span class="w-2 h-2 rounded-full shrink-0" :class="p.status==='online'?'bg-green-400':'bg-red-400'"></span>
+              <span class="text-sm font-medium truncate">{{ p.name }}</span>
+              <span class="text-xs text-gray-600 hidden sm:inline">#{{ p.id }}</span>
+            </div>
+            <div class="flex items-center gap-2 sm:gap-3 text-xs text-gray-500 shrink-0">
+              <span :class="p.status==='online'?'text-green-400':'text-red-400'">{{ p.status }}</span>
+              <span class="hidden sm:inline">CPU {{ p.cpu }}%</span>
+              <span class="hidden sm:inline">{{ fmtBytes(p.memory) }}</span>
+              <span class="hidden md:inline">{{ fmtUptime(p.uptime) }}</span>
+              <span>↻{{ p.restarts }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stored photos -->
+      <section class="bg-gray-900 rounded-2xl border border-gray-800 p-4 sm:p-5">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3 sm:mb-4">Stored Photos</h2>
+        <div v-if="photos.length===0" class="text-sm text-gray-600">No photos</div>
+        <div v-else class="flex flex-wrap gap-2" :key="photos.length">
+          <div v-for="p in photos" :key="p.id" class="bg-gray-800/40 rounded-xl px-3 py-2 text-xs">
+            <div class="font-mono text-gray-200">{{ p.id.slice(0,8) }}</div>
+            <div class="text-gray-500">{{ new Date(p.timestamp).toLocaleString('ru-RU') }}</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ CONTROL ============ -->
+    <div v-show="activeTab==='control'" class="p-3 sm:p-6 space-y-4 sm:space-y-5 max-w-7xl mx-auto">
+
+      <section class="bg-gray-900 rounded-2xl border border-gray-800 p-4 sm:p-5">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3 sm:mb-4">Process Control</h2>
+        <div v-if="processes.length===0" class="text-sm text-gray-600 text-center py-4">Loading...</div>
+        <div v-else class="space-y-2">
+          <div v-for="p in processes" :key="'ctl-'+p.id" class="flex flex-col sm:flex-row sm:items-center justify-between bg-gray-800/40 rounded-xl px-3 sm:px-4 py-3 gap-2">
+            <div class="flex items-center gap-2 sm:gap-3">
+              <span class="w-2 h-2 rounded-full" :class="p.status==='online'?'bg-green-400':'bg-red-400'"></span>
+              <span class="text-sm font-medium">{{ p.name }}</span>
+              <span class="text-xs text-gray-500">{{ p.status }}</span>
+            </div>
+            <div class="flex gap-2">
+              <button @click="pm2Action('restart',p.name)" class="flex-1 sm:flex-none bg-yellow-700/60 hover:bg-yellow-600 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors active:scale-95">Restart</button>
+              <button @click="pm2Action('reload',p.name)" class="flex-1 sm:flex-none bg-blue-700/60 hover:bg-blue-600 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors active:scale-95">Reload</button>
+              <button @click="pm2Action('stop',p.name)" class="flex-1 sm:flex-none bg-red-700/60 hover:bg-red-600 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors active:scale-95">Stop</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-gray-900 rounded-2xl border border-gray-800 p-4 sm:p-5">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3 sm:mb-4">Send Command</h2>
+        <div class="flex gap-2">
+          <select v-model="cmdSelect" class="flex-1 bg-gray-800 text-gray-100 rounded-xl px-3 py-2.5 text-sm border border-gray-700 focus:border-blue-500 focus:outline-none">
+            <option value="coords">GET /api/coords</option>
+            <option value="health">GET /api/healthcheck</option>
+            <option value="photo-list">GET /api/photos/list</option>
+            <option value="photo-add">PUT /api/tasks/photo</option>
+            <option value="task-list">GET /api/tasks/list</option>
+          </select>
+          <button @click="sendCommand" class="bg-blue-600 hover:bg-blue-700 px-5 sm:px-6 py-2.5 rounded-xl text-sm font-medium transition-colors active:scale-95 shrink-0">Send</button>
+        </div>
+        <pre v-if="cmdResult" class="mt-4 bg-gray-950 rounded-xl p-3 sm:p-4 text-xs font-mono text-gray-400 max-h-48 overflow-auto">{{ cmdResult }}</pre>
+      </section>
+
+      <section class="bg-gray-900 rounded-2xl border border-gray-800 p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-3 sm:mb-4">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400">Stored Photos</h2>
+          <button @click="fetchPhotos" class="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg transition-colors active:scale-95">Refresh</button>
+        </div>
+        <div v-if="photos.length===0" class="text-sm text-gray-600">No photos</div>
+        <div v-else class="flex flex-wrap gap-2">
+          <div v-for="p in photos" :key="'act-'+p.id" class="bg-gray-800/40 rounded-xl p-3 flex items-center gap-2 sm:gap-3">
+            <span class="text-xs font-mono text-gray-300">{{ p.id.slice(0,8) }}</span>
+            <a :href="'/api/photos/get/'+p.id" target="_blank" class="bg-blue-700/60 hover:bg-blue-600 px-3 py-1 rounded-lg text-xs transition-colors active:scale-95">Download</a>
+            <button @click="deletePhoto(p.id)" class="bg-red-700/60 hover:bg-red-600 px-3 py-1 rounded-lg text-xs transition-colors active:scale-95">Delete</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ LOGS ============ -->
+    <div v-show="activeTab==='logs'" class="p-3 sm:p-6 space-y-4 sm:space-y-5 max-w-7xl mx-auto">
+      <section class="bg-gray-900 rounded-2xl border border-gray-800 p-4 sm:p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400">Live Logs</h2>
+          <div class="flex items-center gap-3">
+            <select v-model="logProcess" class="bg-gray-800 text-gray-100 rounded-lg px-3 py-1.5 text-sm border border-gray-700 focus:border-blue-500 focus:outline-none">
+              <option value="">Select process...</option>
+              <option v-for="p in processes" :key="'log-'+p.id" :value="p.name">{{ p.name }}</option>
+            </select>
+            <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer shrink-0">
+              <input type="checkbox" v-model="logAuto" class="accent-blue-500" />
+              Live
+            </label>
+          </div>
+        </div>
+        <pre class="bg-gray-950 rounded-xl p-3 sm:p-4 text-xs font-mono text-gray-400 max-h-[60vh] overflow-auto whitespace-pre-wrap">{{ logContent || 'Select a process to view logs...' }}</pre>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } = Vue;
+
+    createApp({
+      setup() {
+        // state
+        const activeTab = ref('dashboard');
+        const tabs = [
+          { id: 'dashboard', label: 'Dashboard' },
+          { id: 'control', label: 'Control' },
+          { id: 'logs', label: 'Logs' },
+        ];
+        const clock = ref('');
+        const commsOk = ref(false);
+        const coords = reactive({ x: 100, y: 100, z: 100 });
+        const target = reactive({ x: 100, y: 100, z: 100 });
+        const deltas = reactive({ dx: 0, dy: 0, dz: 0 });
+        const isCritical = ref(false);
+        const threshold = ref(5);
+        const queue = ref([]);
+        const processes = ref([]);
+        const photos = ref([]);
+        const cmdSelect = ref('coords');
+        const cmdResult = ref(null);
+        const logProcess = ref('');
+        const logAuto = ref(true);
+        const logContent = ref('');
+        const satCanvas = ref(null);
+
+        let intervals = [];
+
+        // helpers
+        const fmtNum = v => Number(v).toFixed(2);
+        const timeSince = ts => ts ? Math.floor((Date.now()-new Date(ts))/1000)+'s ago' : '';
+        const fmtBytes = b => { if(!b) return '-'; if(b>1e6) return (b/1e6).toFixed(1)+' MB'; if(b>1e3) return (b/1e3).toFixed(1)+' KB'; return b+' B'; };
+        const fmtUptime = s => { if(!s) return '-'; const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h?h+'h '+m+'m':m+'m '+s%60+'s'; };
+
+        // fetch
+        const apiGet = async (url, opts={}) => {
+          try {
+            const r = await fetch(url, opts);
+            if(!r.ok) return { error: 'HTTP '+r.status };
+            const ct = r.headers.get('content-type')||'';
+            if(ct.includes('json')) return await r.json();
+            return {};
+          } catch(e) { return { error: e.message }; }
+        };
+
+        // comms
+        const commsLedClass = computed(() => 'w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full '+(commsOk.value?'bg-green-500':'bg-red-500'));
+        const commsTextClass = computed(() => 'text-xs sm:text-sm '+(commsOk.value?'text-green-400':'text-red-400'));
+        const commsText = computed(() => commsOk.value ? 'Connected' : 'Disconnected');
+
+        // coords derived
+        const targetStr = computed(() => `${fmtNum(target.x)}, ${fmtNum(target.y)}, ${fmtNum(target.z)}`);
+        const deviationText = computed(() => {
+          const d = Math.sqrt((coords.x-target.x)**2+(coords.y-target.y)**2+(coords.z-target.z)**2);
+          return d>5 ? `⚠️ Deviation ${d.toFixed(1)}` : `✓ On track (Δ${d.toFixed(1)})`;
+        });
+        const deviationClass = computed(() => {
+          const d = Math.sqrt((coords.x-target.x)**2+(coords.y-target.y)**2+(coords.z-target.z)**2);
+          return d>5 ? 'text-red-400' : 'text-green-400';
+        });
+        const coordsSectionClass = computed(() => {
+          if(isCritical.value) return 'bg-red-900/30 border-red-500/50';
+          return 'bg-green-900/30 border-green-500/50';
+        });
+        const deltaClass = (ax) => {
+          const v = deltas['d'+ax];
+          return 'font-mono '+(Math.abs(Number(v))>5?'text-red-400':'text-green-400');
+        };
+        const deltaStr = (ax) => {
+          const v = Number(deltas['d'+ax]);
+          if(isNaN(v)) return '-';
+          return v>=0 ? '+'+v.toFixed(2) : v.toFixed(2);
+        };
+
+        // queue cards
+        const taskCardClass = (t) => {
+          if(t.status==='done') return 'bg-green-900/20 border-green-800/30';
+          if(t.status==='processing') return 'bg-yellow-900/20 border-yellow-800/30';
+          return 'bg-gray-800/40 border-gray-700/30';
+        };
+        const taskStatusClass = (t) => {
+          if(t.status==='done') return 'text-green-400';
+          if(t.status==='processing') return 'text-yellow-400';
+          return 'text-blue-400';
+        };
+        const taskStatusIcon = (t) => {
+          if(t.status==='done') return '✅';
+          if(t.status==='processing') return '⏳';
+          return '🕐';
+        };
+
+        // canvas
+        let canvasCtx = null;
+        function drawSat() {
+          const canvas = satCanvas.value;
+          if(!canvas) return;
+          if(!canvasCtx) canvasCtx = canvas.getContext('2d');
+          const ctx = canvasCtx, w=700, h=280;
+          canvas.width=w; canvas.height=h;
+          ctx.clearRect(0,0,w,h);
+          const grad = ctx.createRadialGradient(w/2,h/2,10,w/2,h/2,280);
+          grad.addColorStop(0,'#0a1628'); grad.addColorStop(1,'#020812');
+          ctx.fillStyle=grad; ctx.fillRect(0,0,w,h);
+          ctx.fillStyle='rgba(255,255,255,0.4)';
+          for(let i=0;i<80;i++){ const sx=(i*137.5+50)%w,sy=(i*97.3+200)%h; ctx.beginPath(); ctx.arc(sx,sy,0.8+(i%3)*0.4,0,Math.PI*2); ctx.fill(); }
+          ctx.strokeStyle='rgba(30,80,160,0.15)'; ctx.lineWidth=1;
+          for(let i=0;i<=7;i++){ ctx.beginPath(); ctx.moveTo(i*100,0); ctx.lineTo(i*100,h); ctx.stroke(); }
+          for(let i=0;i<=3;i++){ ctx.beginPath(); ctx.moveTo(0,i*93); ctx.lineTo(w,i*93); ctx.stroke(); }
+          const scale=0.5,ox=350,oy=140;
+          const sx=ox+(coords.x-100)*scale,sy=oy-(coords.y-100)*scale;
+          const stx=ox+(target.x-100)*scale,sty=oy-(target.y-100)*scale;
+          ctx.strokeStyle='rgba(0,200,255,0.2)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+          ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(stx,sty); ctx.stroke(); ctx.setLineDash([]);
+          ctx.fillStyle='rgba(0,200,255,0.3)'; ctx.beginPath(); ctx.arc(stx,sty,8,0,Math.PI*2); ctx.fill();
+          ctx.strokeStyle='rgba(0,200,255,0.5)'; ctx.lineWidth=1.5;
+          ctx.beginPath(); ctx.moveTo(stx-12,sty); ctx.lineTo(stx+12,sty); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(stx,sty-12); ctx.lineTo(stx,sty+12); ctx.stroke();
+          const grd=ctx.createRadialGradient(sx-4,sy-4,2,sx,sy,16);
+          grd.addColorStop(0,'#60a5fa'); grd.addColorStop(0.6,'#2563eb'); grd.addColorStop(1,'#1e40af');
+          ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(sx,sy,14,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle='#1e3a5f'; ctx.fillRect(sx-20,sy-4,6,8); ctx.fillRect(sx+14,sy-4,6,8);
+          ctx.fillStyle='#2d5aa0'; ctx.fillRect(sx-20,sy-4,6,2); ctx.fillRect(sx+14,sy-4,6,2);
+          const glow=ctx.createRadialGradient(sx,sy,4,sx,sy,30);
+          glow.addColorStop(0,'rgba(96,165,250,0.3)'); glow.addColorStop(1,'rgba(96,165,250,0)');
+          ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(sx,sy,30,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle='rgba(148,163,184,0.7)'; ctx.font='10px monospace'; ctx.textAlign='center';
+          ctx.fillText(`(${fmtNum(coords.x)}, ${fmtNum(coords.y)}, ${fmtNum(coords.z)})`,sx,sy+30);
+        }
+
+        // data fetchers
+        async function fetchCoords() {
+          const d = await apiGet('/api/coords');
+          if(d.error) return;
+          Object.assign(coords, d.coords);
+          Object.assign(target, d.target);
+          Object.assign(deltas, d.delta);
+          isCritical.value = d.isCritical;
+          threshold.value = d.threshold;
+          drawSat();
+        }
+
+        async function fetchComms() {
+          const d = await apiGet('/api/healthcheck');
+          commsOk.value = !d.error;
+        }
+
+        async function fetchQueue() {
+          const d = await apiGet('/api/tasks/list');
+          if(!d.error) queue.value = d;
+        }
+
+        async function fetchProcesses() {
+          const d = await apiGet('/api/processes');
+          if(!d.error) processes.value = d;
+        }
+
+        async function fetchPhotos() {
+          const d = await apiGet('/api/photos/list');
+          if(!d.error) photos.value = d;
+        }
+
+        async function adjustAxis(axis, dir) {
+          const delta = dir*5;
+          const cur = { ...coords };
+          const newVal = cur[axis] + delta;
+          cur[axis] = newVal;
+          await fetch('/api/coords/update', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ x: cur.x, y: cur.y, z: cur.z })
+          });
+          fetchQueue();
+        }
+
+        async function pm2Action(action, name) {
+          const r = await apiGet('/api/'+action+'/'+name, { method:'POST' });
+          if(r.success) setTimeout(fetchProcesses, 1000);
+        }
+
+        async function sendCommand() {
+          const val = cmdSelect.value;
+          let url, opts = {};
+          switch(val) {
+            case 'coords': url='/api/coords'; break;
+            case 'health': url='/api/healthcheck'; break;
+            case 'photo-list': url='/api/photos/list'; break;
+            case 'photo-add': url='/api/tasks/photo'; opts.method='PUT'; break;
+            case 'task-list': url='/api/tasks/list'; break;
+            default: return;
+          }
+          const d = await apiGet(url, opts);
+          cmdResult.value = typeof d === 'string' ? d : JSON.stringify(d, null, 2);
+          if(val==='photo-add'||val==='photo-list') fetchQueue().then(fetchPhotos);
+        }
+
+        async function deletePhoto(id) {
+          await apiGet('/api/photos/get/'+id, { method:'DELETE' });
+          fetchPhotos();
+        }
+
+        async function fetchLogs() {
+          if(!logProcess.value) { logContent.value='Select a process to view logs...'; return; }
+          const d = await apiGet('/api/logs/'+logProcess.value);
+          if(d.logs) logContent.value = d.logs.join('\n');
+          else logContent.value = d.error || 'No logs';
+        }
+
+        // Clock
+        function updateClock() {
+          clock.value = new Date().toLocaleTimeString('ru-RU', { hour12:false });
+        }
+
+        // Lifecycle
+        onMounted(() => {
+          updateClock();
+          fetchComms(); fetchCoords(); fetchQueue(); fetchProcesses(); fetchPhotos();
+          intervals = [
+            setInterval(fetchComms, 3000),
+            setInterval(fetchCoords, 2000),
+            setInterval(fetchQueue, 3000),
+            setInterval(fetchProcesses, 5000),
+            setInterval(fetchPhotos, 5000),
+            setInterval(updateClock, 1000),
+          ];
+        });
+
+        onUnmounted(() => intervals.forEach(clearInterval));
+
+        // Watch log process
+        let logInt = null;
+        watch([logProcess, logAuto], () => {
+          if(logInt) clearInterval(logInt);
+          if(logAuto.value && logProcess.value) {
+            fetchLogs();
+            logInt = setInterval(fetchLogs, 3000);
+          } else if(!logAuto.value && logProcess.value) {
+            fetchLogs();
+          }
+        });
+
+        return {
+          activeTab, tabs, clock,
+          commsOk, commsLedClass, commsTextClass, commsText,
+          coords, target, deltas, isCritical, threshold,
+          targetStr, deviationText, deviationClass, coordsSectionClass,
+          deltaClass, deltaStr, fmtNum, timeSince, fmtBytes, fmtUptime,
+          queue, taskCardClass, taskStatusClass, taskStatusIcon,
+          processes, photos,
+          cmdSelect, cmdResult, sendCommand,
+          logProcess, logAuto, logContent,
+          satCanvas,
+          adjustAxis, pm2Action, deletePhoto, fetchPhotos,
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

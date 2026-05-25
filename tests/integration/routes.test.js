@@ -43,11 +43,10 @@ jest.mock('../../src/services/pm2Service', () => ({
 }));
 
 describe('API Routes Integration', () => {
-  test('GET / returns service info', async () => {
+  test('GET / returns index.html', async () => {
     const res = await request(app).get('/');
     expect(res.status).toBe(200);
-    expect(res.body.service).toBe('Satellite Command Gateway');
-    expect(res.body.endpoints).toBeInstanceOf(Array);
+    expect(res.headers['content-type']).toContain('text/html');
   });
 
   test('GET /api/healthcheck returns ok', async () => {
