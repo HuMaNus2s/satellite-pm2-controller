@@ -5,7 +5,7 @@ module.exports = {
       script: 'index.js',
       instances: 1,
       exec_mode: 'fork',
-      env: { PORT: 3000 }
+      env: { PORT: process.env.APP_PORT }
     },
     {
       name: 'orientation',
@@ -14,9 +14,9 @@ module.exports = {
       exec_mode: 'cluster',
       max_memory_restart: '150M',
       env: {
-        NODE_ENV: 'production',
-        REDIS_HOST: 'localhost',
-        REDIS_PORT: 6379
+        NODE_ENV: process.env.NODE_ENV,
+        REDIS_HOST: process.env.REDIS_HOST,
+        REDIS_PORT: process.env.REDIS_PORT
       }
     }
   ]

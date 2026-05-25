@@ -5,8 +5,7 @@ app.use(express.json());
 
 app.get('/', (req, res) => {
   res.json({
-    service: 'Satellite Command Gateway',
-    version: '1.0.0',
+    service: 'Satellite',
     endpoints: [
       'GET  /api/healthcheck',
       'GET  /api/coords',

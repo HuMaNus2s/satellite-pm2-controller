@@ -13,9 +13,9 @@ router.get('/', async (req, res) => {
       dz: +(coords.z - target.z).toFixed(2),
     };
 
-    const isCritical = Math.abs(delta.dx) > config.THRESHOLD ||
-                       Math.abs(delta.dy) > config.THRESHOLD ||
-                       Math.abs(delta.dz) > config.THRESHOLD;
+    const isCritical = Math.abs(delta.dx) > config.THRESHOLD 
+    || Math.abs(delta.dy) > config.THRESHOLD 
+    || Math.abs(delta.dz) > config.THRESHOLD;
 
     res.json({
       coords,
